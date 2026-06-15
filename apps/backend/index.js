@@ -34,7 +34,8 @@ app.use(express.json());
 //   name: string,
 //   createdAt: number,
 //   expiresAt: number,
-//   participants: Map<socketId, { userId, userName, initials, color, lat, lng, battery, speed, status }>
+//   participants: Map<socketId, { userId, userName, initials, color, lat, lng, battery, speed, status, invisible }>
+//   meetingPin: { lat, lng, creatorName, createdAt } | null
 // }>
 const rooms = new Map();
 
@@ -117,6 +118,7 @@ io.on("connection", (socket) => {
       createdAt: now,
       expiresAt: now + ROOM_EXPIRY_MS,
       participants: new Map(),
+      meetingPin: null,
     });
 
     console.log(`✦ Room created: ${roomId} — "${roomName}"`);
@@ -161,6 +163,7 @@ io.on("connection", (socket) => {
       battery: 100,
       speed: 0,
       status: "Connecting...",
+      invisible: false,
       joinedAt: now,
     };
 
@@ -177,6 +180,7 @@ io.on("connection", (socket) => {
       battery: p.battery,
       speed: p.speed,
       status: p.status,
+      invisible: p.invisible,
       isUser: p.userId === socket.id,
     }));
 
@@ -188,6 +192,7 @@ io.on("connection", (socket) => {
         roomName: room.name,
         expiresAt: room.expiresAt,
         participants: participantsList,
+        meetingPin: room.meetingPin || null,
       });
     }
 
@@ -207,6 +212,7 @@ io.on("connection", (socket) => {
         battery: participant.battery,
         speed: participant.speed,
         status: participant.status,
+        invisible: participant.invisible,
         isUser: false,
       },
     });
@@ -231,6 +237,9 @@ io.on("connection", (socket) => {
     if (speed !== undefined) participant.speed = speed;
     if (status !== undefined) participant.status = status;
 
+    // If invisible, store location but do NOT broadcast to others
+    if (participant.invisible) return;
+
     // Broadcast to all OTHER members in the room
     socket.to(currentRoomId).emit("location-broadcast", {
       userId: socket.id,
@@ -243,6 +252,53 @@ io.on("connection", (socket) => {
       speed: participant.speed,
       status: participant.status,
     });
+  });
+
+  // ── Set Meeting Pin ─────────────────────────────────
+  socket.on("set-meeting-pin", ({ lat, lng }) => {
+    if (!currentRoomId) return;
+
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+
+    const participant = room.participants.get(socket.id);
+    if (!participant) return;
+
+    const pin = {
+      lat,
+      lng,
+      creatorName: participant.userName,
+      createdAt: Date.now(),
+    };
+
+    // Replace any existing pin
+    room.meetingPin = pin;
+
+    // Broadcast to ALL members in the room (including sender)
+    io.in(currentRoomId).emit("meeting-pin-set", pin);
+
+    console.log(`✦ Meeting pin set by ${participant.userName} in room ${currentRoomId}`);
+  });
+
+  // ── Toggle Invisible ────────────────────────────────
+  socket.on("toggle-invisible", ({ invisible }) => {
+    if (!currentRoomId) return;
+
+    const room = rooms.get(currentRoomId);
+    if (!room) return;
+
+    const participant = room.participants.get(socket.id);
+    if (!participant) return;
+
+    participant.invisible = !!invisible;
+
+    // Broadcast visibility change to all OTHER members
+    socket.to(currentRoomId).emit("user-visibility-changed", {
+      userId: socket.id,
+      invisible: participant.invisible,
+    });
+
+    console.log(`✦ ${participant.userName} is now ${participant.invisible ? "invisible" : "visible"} in room ${currentRoomId}`);
   });
 
   // ── Disconnect ───────────────────────────────────────

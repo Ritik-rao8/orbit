@@ -13,6 +13,7 @@ export default function useSocket(roomId) {
   const watchIdRef = useRef(null);
   const locationIntervalRef = useRef(null);
   const latestLocationRef = useRef(null);
+  const isInvisibleRef = useRef(false);
 
   const [isConnected, setIsConnected] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
@@ -20,6 +21,11 @@ export default function useSocket(roomId) {
   const [roomInfo, setRoomInfo] = useState(null);
   const [error, setError] = useState(null);
   const [myUserId, setMyUserId] = useState(null);
+
+  // ── New state for premium features ──────────────────
+  const [meetingPin, setMeetingPinState] = useState(null);
+  const [notification, setNotification] = useState(null);
+  const [isInvisible, setIsInvisibleState] = useState(false);
 
   // Connect socket on mount
   useEffect(() => {
@@ -78,6 +84,25 @@ export default function useSocket(roomId) {
       setError(message);
     });
 
+    // ── Meeting pin set by anyone ───────────────────────
+    socket.on("meeting-pin-set", (pin) => {
+      setMeetingPinState(pin);
+      setNotification(`${pin.creatorName} set a meeting point.`);
+      // Auto-clear notification after 3.5 seconds
+      setTimeout(() => setNotification(null), 3500);
+    });
+
+    // ── User visibility changed ─────────────────────────
+    socket.on("user-visibility-changed", ({ userId, invisible }) => {
+      setParticipants((prev) =>
+        prev.map((p) =>
+          p.id === userId
+            ? { ...p, invisible }
+            : p
+        )
+      );
+    });
+
     return () => {
       socket.disconnect();
       if (watchIdRef.current !== null) {
@@ -115,9 +140,11 @@ export default function useSocket(roomId) {
                     ...p,
                     lat: position.coords.latitude,
                     lng: position.coords.longitude,
-                    status: position.coords.speed > 1
-                      ? `Moving • ${Math.round((position.coords.speed || 0) * 3.6)}km/h`
-                      : "Stationary",
+                    status: isInvisibleRef.current
+                      ? "Invisible"
+                      : position.coords.speed > 1
+                        ? `Moving • ${Math.round((position.coords.speed || 0) * 3.6)}km/h`
+                        : "Stationary",
                   }
                 : p
             )
@@ -161,6 +188,9 @@ export default function useSocket(roomId) {
       const loc = latestLocationRef.current;
       if (!socket || !loc) return;
 
+      // If invisible, skip emitting (server also enforces this)
+      if (isInvisibleRef.current) return;
+
       const speedKmh = Math.round((loc.speed || 0) * 3.6);
       const status = speedKmh > 1 ? `Moving • ${speedKmh}km/h` : "Stationary";
 
@@ -196,6 +226,11 @@ export default function useSocket(roomId) {
           isUser: p.id === socket.id,
         }));
         setParticipants(mapped);
+
+        // Set initial meeting pin if one exists
+        if (response.meetingPin) {
+          setMeetingPinState(response.meetingPin);
+        }
 
         // Start geolocation tracking
         startLocationTracking();
@@ -243,6 +278,34 @@ export default function useSocket(roomId) {
     setParticipants([]);
   }, []);
 
+  // ── Set Meeting Pin ─────────────────────────────────
+  const setMeetingPin = useCallback((lat, lng) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+    socket.emit("set-meeting-pin", { lat, lng });
+  }, []);
+
+  // ── Toggle Invisible ────────────────────────────────
+  const toggleInvisible = useCallback((invisible) => {
+    const socket = socketRef.current;
+    if (!socket) return;
+
+    const newState = !!invisible;
+    isInvisibleRef.current = newState;
+    setIsInvisibleState(newState);
+
+    // Update own participant status locally
+    setParticipants((prev) =>
+      prev.map((p) =>
+        p.isUser
+          ? { ...p, invisible: newState, status: newState ? "Invisible" : "Stationary" }
+          : p
+      )
+    );
+
+    socket.emit("toggle-invisible", { invisible: newState });
+  }, []);
+
   return {
     isConnected,
     hasJoined,
@@ -254,5 +317,11 @@ export default function useSocket(roomId) {
     createRoom,
     leaveRoom,
     setError,
+    // ── New premium feature exports ──
+    meetingPin,
+    notification,
+    isInvisible,
+    setMeetingPin,
+    toggleInvisible,
   };
 }
