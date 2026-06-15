@@ -1,0 +1,20 @@
+{
+  "name": "orbit",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n frontend,backend -c blue,green \"npm run dev -w @orbit/frontend\" \"npm run dev -w @orbit/backend\"",
+    "dev:frontend": "npm run dev -w @orbit/frontend",
+    "dev:backend": "npm run dev -w @orbit/backend",
+    "build": "npm run build -w @orbit/frontend",
+    "start:frontend": "npm run start -w @orbit/frontend",
+    "start:backend": "npm run start -w @orbit/backend",
+    "lint": "npm run lint -w @orbit/frontend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
