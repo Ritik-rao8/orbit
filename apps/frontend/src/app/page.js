@@ -141,7 +141,7 @@ export default function Home() {
   const getSocket = () => {
     if (!socketRef.current || !socketRef.current.connected) {
       socketRef.current = io(SOCKET_URL, {
-        transports: ["websocket", "polling"],
+        transports: ["polling", "websocket"],
       });
     }
     return socketRef.current;
