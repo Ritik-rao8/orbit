@@ -16,6 +16,7 @@ import {
   Copy, 
   Check, 
   ChevronRight, 
+  ChevronDown,
   X, 
   Sparkles,
   ArrowRight,
@@ -88,9 +89,11 @@ export default function Home() {
 
   // --- Create Room Simulation State ---
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
-  const [roomStep, setRoomStep] = useState(0); // 0: loading, 1: completed
+  const [roomStep, setRoomStep] = useState(-1); // -1: configure, 0: loading, 1: completed
   const [generatedRoomId, setGeneratedRoomId] = useState("");
   const [copied, setCopied] = useState(false);
+  const [roomName, setRoomName] = useState("Live Room");
+  const [durationHours, setDurationHours] = useState(6);
 
   // --- Join Room State ---
   const [joinCode, setJoinCode] = useState("");
@@ -153,31 +156,35 @@ export default function Home() {
     };
   }, []);
 
-  // Generate Room action — real server call
+  // Open create room modal configuration
   const triggerCreateRoom = () => {
     setIsCreatingRoom(true);
-    setRoomStep(0);
+    setRoomStep(-1);
+    setRoomName("Live Room");
+    setDurationHours(6);
     setCopied(false);
+  };
 
+  // Perform the actual room creation
+  const executeCreateRoom = () => {
+    setRoomStep(0);
     const socket = getSocket();
+    const payload = { roomName: roomName.trim() || "Live Room", durationHours };
 
-    socket.on("connect", () => {
-      socket.emit("create-room", { roomName: "Live Room" }, (response) => {
-        if (response.success) {
-          setGeneratedRoomId(response.roomId.toUpperCase());
-          setRoomStep(1);
-        }
-      });
-    });
+    const handleResponse = (response) => {
+      if (response.success) {
+        setGeneratedRoomId(response.roomId.toUpperCase());
+        setRoomStep(1);
+      }
+    };
 
-    // If already connected, emit immediately
     if (socket.connected) {
-      socket.emit("create-room", { roomName: "Live Room" }, (response) => {
-        if (response.success) {
-          setGeneratedRoomId(response.roomId.toUpperCase());
-          setRoomStep(1);
-        }
+      socket.emit("create-room", payload, handleResponse);
+    } else {
+      socket.once("connect", () => {
+        socket.emit("create-room", payload, handleResponse);
       });
+      socket.connect();
     }
   };
 
@@ -662,7 +669,83 @@ export default function Home() {
                 <X className="w-4 h-4" />
               </button>
 
-              {roomStep === 0 ? (
+              {roomStep === -1 ? (
+                /* Step -1: Configure */
+                <div className="py-2 text-left">
+                  <div className="w-12 h-12 rounded-2xl bg-[#4F9CF9]/10 border border-[#4F9CF9]/20 flex items-center justify-center text-[#4F9CF9] mb-6 mx-auto">
+                    <Clock className="w-6 h-6" />
+                  </div>
+                  
+                  <h3 className="text-xl font-bold text-white text-center mb-1">Configure Live Room</h3>
+                  <p className="text-xs text-[#A1A7B3] text-center mb-6">Set up your room name and expiration time.</p>
+
+                  <div className="space-y-5">
+                    {/* Room Name Input */}
+                    <div>
+                      <label className="text-[10px] font-bold text-[#A1A7B3] uppercase tracking-wider block mb-2">
+                        Room Name
+                      </label>
+                      <input
+                        type="text"
+                        value={roomName}
+                        onChange={(e) => setRoomName(e.target.value)}
+                        placeholder="e.g. Live Room"
+                        maxLength={30}
+                        className="w-full px-4 py-3 rounded-xl bg-[#0F1115] border border-white/[0.06] text-sm text-white placeholder:text-[#A1A7B3]/40 focus:outline-none focus:border-[#4F9CF9]/40 transition-colors"
+                      />
+                    </div>
+
+                    {/* Expiry Selector */}
+                    <div>
+                      <label className="text-[10px] font-bold text-[#A1A7B3] uppercase tracking-wider block mb-2">
+                        Room Expiration Time
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={durationHours}
+                          onChange={(e) => setDurationHours(Number(e.target.value))}
+                          className="w-full px-4 py-3 rounded-xl bg-[#0F1115] border border-white/[0.06] text-sm text-white focus:outline-none focus:border-[#4F9CF9]/40 transition-colors appearance-none cursor-pointer pr-10 font-medium"
+                        >
+                          <option value={1} className="bg-[#171A20]">1 Hour</option>
+                          <option value={2} className="bg-[#171A20]">2 Hours</option>
+                          <option value={3} className="bg-[#171A20]">3 Hours</option>
+                          <option value={4} className="bg-[#171A20]">4 Hours</option>
+                          <option value={6} className="bg-[#171A20]">6 Hours (Default)</option>
+                          <option value={8} className="bg-[#171A20]">8 Hours</option>
+                          <option value={12} className="bg-[#171A20]">12 Hours</option>
+                          <option value={18} className="bg-[#171A20]">18 Hours</option>
+                          <option value={24} className="bg-[#171A20]">24 Hours</option>
+                          <option value={48} className="bg-[#171A20]">48 Hours (2 days)</option>
+                          <option value={72} className="bg-[#171A20]">72 Hours (3 days)</option>
+                          <option value={168} className="bg-[#171A20]">168 Hours (1 week)</option>
+                        </select>
+                        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-[#A1A7B3]">
+                          <ChevronDown className="w-4 h-4" />
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-[#A1A7B3]/80 block mt-2.5 leading-relaxed">
+                        After this time, the room and all live tracking data will be permanently deleted.
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex gap-3">
+                    <button 
+                      onClick={() => setIsCreatingRoom(false)}
+                      className="flex-1 py-3 text-xs font-bold rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 transition-colors text-white active:scale-[0.98]"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={executeCreateRoom}
+                      className="flex-1 py-3 text-xs font-bold rounded-xl bg-[#4F9CF9] hover:bg-[#68AFFF] transition-colors text-white active:scale-[0.98] flex items-center justify-center gap-1 shadow-md shadow-[#4F9CF9]/10"
+                    >
+                      <span>Create Room</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : roomStep === 0 ? (
                 /* Step 0: Loading */
                 <div className="py-8 flex flex-col items-center justify-center text-center">
                   <div className="relative w-16 h-16 mb-6">
@@ -683,7 +766,7 @@ export default function Home() {
                   </div>
                   
                   <h3 className="text-xl font-bold text-white mb-2">Your room is ready</h3>
-                  <p className="text-xs text-[#A1A7B3] mb-6">Your temporary room will automatically expire after 6 hours. Invite friends to join live tracking.</p>
+                  <p className="text-xs text-[#A1A7B3] mb-6">Your temporary room will automatically expire after {durationHours} hours. Invite friends to join live tracking.</p>
 
                   <div className="space-y-4">
                     <div className="text-left">

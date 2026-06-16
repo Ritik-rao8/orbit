@@ -101,6 +101,7 @@ export default function LiveRoom() {
   const [expandedParticipant, setExpandedParticipant] = useState(null);
   const [isPinPlacementMode, setIsPinPlacementMode] = useState(false);
   const [showInvitePopup, setShowInvitePopup] = useState(false);
+  const isLeavingRef = useRef(false);
 
   // Join screen state
   const [userName, setUserName] = useState("");
@@ -128,6 +129,29 @@ export default function LiveRoom() {
 
     return () => clearInterval(timer);
   }, [roomInfo?.expiresAt]);
+
+  // Intercept back button popstate when hasJoined is true
+  useEffect(() => {
+    if (!hasJoined) return;
+
+    // Push initial dummy state so we have history to pop
+    window.history.pushState({ isRoomEntry: true }, "", window.location.href);
+
+    const handlePopState = (event) => {
+      if (isLeavingRef.current) return;
+
+      // Show leave confirmation modal
+      setShowLeaveConfirm(true);
+
+      // Re-push history entry to prevent back navigation and allow catching next popstate
+      window.history.pushState({ isRoomEntry: true }, "", window.location.href);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [hasJoined]);
 
   // Map center: use the current user's position, or default
   const myPosition = participants.find(p => p.isUser);
@@ -538,10 +562,10 @@ export default function LiveRoom() {
           {/* INTERACTIVE DRAGGABLE BOTTOM SHEET */}
           <motion.div 
             drag="y"
-            dragConstraints={{ top: -420, bottom: 0 }}
+            dragConstraints={{ top: -400, bottom: 0 }}
             dragElastic={0.12}
             dragMomentum={false}
-            animate={{ y: isBottomSheetExpanded ? -420 : 0 }}
+            animate={{ y: isBottomSheetExpanded ? -400 : 0 }}
             onDragEnd={(e, info) => {
               if (info.offset.y < -80) {
                 setIsBottomSheetExpanded(true);
@@ -552,14 +576,16 @@ export default function LiveRoom() {
             className="w-full bg-[#171A20]/95 backdrop-blur-xl border border-white/[0.06] rounded-[28px] shadow-[0_-15px_30px_-5px_rgba(0,0,0,0.5)] p-4 flex flex-col pointer-events-auto cursor-ns-resize"
             style={{
               height: "480px",
-              marginBottom: "-420px"
+              marginBottom: "-400px"
             }}
           >
-            {/* Grab Handle */}
+            {/* Grab Handle Wrapper (provides a larger touch target for mobile) */}
             <div 
               onClick={() => setIsBottomSheetExpanded(!isBottomSheetExpanded)}
-              className="w-12 h-1 bg-white/20 rounded-full mx-auto mb-2 cursor-pointer hover:bg-white/40 transition-colors" 
-            />
+              className="w-full py-3 -mt-2 cursor-pointer flex items-center justify-center group"
+            >
+              <div className="w-16 h-1.5 bg-white/25 rounded-full group-hover:bg-white/40 transition-colors" />
+            </div>
             
             {/* Header info / Collapsed bar */}
             <div 
@@ -803,6 +829,7 @@ export default function LiveRoom() {
                 </button>
                 <button
                   onClick={() => {
+                    isLeavingRef.current = true;
                     setShowLeaveConfirm(false);
                     leaveRoom();
                     router.push("/");

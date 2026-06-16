@@ -109,19 +109,25 @@ io.on("connection", (socket) => {
   let currentUserName = null;
 
   // ── Create Room ──────────────────────────────────────
-  socket.on("create-room", ({ roomName }, callback) => {
+  socket.on("create-room", ({ roomName, durationHours }, callback) => {
     const roomId = generateRoomId();
     const now = Date.now();
+
+    // Default duration is 6 hours, validate input
+    let expiryMs = ROOM_EXPIRY_MS;
+    if (durationHours && typeof durationHours === "number" && durationHours > 0 && durationHours <= 168) {
+      expiryMs = durationHours * 60 * 60 * 1000;
+    }
 
     rooms.set(roomId, {
       name: roomName || "Untitled Room",
       createdAt: now,
-      expiresAt: now + ROOM_EXPIRY_MS,
+      expiresAt: now + expiryMs,
       participants: new Map(),
       meetingPin: null,
     });
 
-    console.log(`✦ Room created: ${roomId} — "${roomName}"`);
+    console.log(`✦ Room created: ${roomId} — "${roomName}" (${expiryMs / 1000 / 60 / 60}h expiry)`);
 
     if (typeof callback === "function") {
       callback({ success: true, roomId });

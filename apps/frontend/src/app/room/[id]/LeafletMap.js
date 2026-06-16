@@ -76,18 +76,53 @@ function MapController({ center, zoom, flyTo }) {
 
 // Map interaction handler (long-press + regular click for pin placement)
 function MapInteractionHandler({ onLongPress, onMapClick }) {
+  const clickTimeoutRef = useRef(null);
+
   useMapEvents({
     contextmenu: (e) => {
-      if (onLongPress) {
+      // Only trigger long-press for actual touch events on mobile
+      const isTouch = e.originalEvent && (
+        e.originalEvent.pointerType === "touch" ||
+        (e.originalEvent.touches && e.originalEvent.touches.length > 0) ||
+        e.originalEvent.type.startsWith("touch")
+      );
+      if (isTouch && onLongPress) {
         onLongPress(e.latlng.lat, e.latlng.lng);
       }
     },
     click: (e) => {
-      if (onMapClick) {
-        onMapClick(e.latlng.lat, e.latlng.lng);
+      // Ignore click if it's not the primary (left) button
+      if (e.originalEvent && e.originalEvent.button !== 0) {
+        return;
       }
+
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+      
+      clickTimeoutRef.current = setTimeout(() => {
+        if (onMapClick) {
+          onMapClick(e.latlng.lat, e.latlng.lng);
+        }
+        clickTimeoutRef.current = null;
+      }, 250);
     },
+    dblclick: () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+        clickTimeoutRef.current = null;
+      }
+    }
   });
+
+  useEffect(() => {
+    return () => {
+      if (clickTimeoutRef.current) {
+        clearTimeout(clickTimeoutRef.current);
+      }
+    };
+  }, []);
+
   return null;
 }
 
